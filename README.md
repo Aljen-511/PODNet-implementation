@@ -9,7 +9,7 @@ A project to implement a simple PODNet model via source paper `PODNet:Pooled Out
 > This is the begin of this project, wrote on 4.27,2024.
 
 
-**Note:**All the development work will upload to the branch `Dev`
+**Note:** All the development work will upload to the branch `Dev`
 
 
 
