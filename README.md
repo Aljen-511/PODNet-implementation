@@ -10,6 +10,7 @@ A project to implement a simple PODNet model via source paper `PODNet:Pooled Out
 
 
 **Note:** All the development work will upload to the branch `Dev`
+try the changed and commit from myself.
 
 
 
