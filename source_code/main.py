@@ -18,14 +18,30 @@
 # test-------
 #           |--O __init__.py
 #           |--O test.py
+#           |--O metric.py
 # 一个模块写数据处理的内容
 # dataprocess--------
 #                   |--O __init__.py
-#                   |--O dataprocess.py
+#                   |--O process.py
 # main函数要写好接口与超参数设置
+# 因为算力限制，还需要检查gpu是否可用，同时可以考虑用分布式的训练方式
 
 
 from test import test
-
+import argparse
 test.testfunc()
-
+test.showcwd()
+# def main():
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--dataName", type = str, default="cifar100",
+#                         help="dataset used in training or testing task, options: cifar100, imagenet100")
+#     parser.add_argument("--task", type = str, default="train" ,
+#                         help="task to be executed, options: train, test, inference")
+#     parser.add_argument("--batchSize", type = int, default=64,
+#                         help="batchsize of the model")
+#     parser.add_argument("--loadPretrianed", type = bool, default=True,
+#                         help="load the pretrained INCREMENTAL model or not, options: Ture, False")
+#     parser.add_argument("--pretrainedPath", type = str, default = None,
+#                         help="the path to the selected pretrained INCREMENTAL model")
+    #etc
+    
