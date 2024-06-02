@@ -19,6 +19,11 @@ from model import utils
 from torch import nn
 import torch
 
+global data2conv 
+data2conv = {
+    "cifar100":"resnet32",
+    "imagenet100":"resnet18"
+}
 
 class integratedMdl():
     def __init__(self, load_checkpoint = False, load_path="",data_name = "cifar100"):
@@ -27,10 +32,10 @@ class integratedMdl():
         # 同时，依然要注意判断：数据是在cpu上还是在gpu上
         if load_checkpoint:
             # TODO: 做好预训练模型的载入
+
             pass
         else:
-            self.dataset = None
-            self.curModel = None
+            self.curModel = PODNet(pretrainedBackbone=True, backboneType=data2conv[data_name])
             self.oldModel = None
             self.setManager = utils.sampleSetManager() #采用某种样本集管理策略
         

@@ -1,4 +1,5 @@
 __pycache__/
 scripts.txt
 support/
-dataset/
+dataset/cifar-100-python/
+dataset/cifar-100-python.tar.gz

@@ -66,3 +66,9 @@ def proxy_initialize(k, trainSet):
         proxy_dict[class_] = torch.tensor(proxys)
 
     return proxy_dict
+
+def metric(model, testset):
+    '''
+    Input: 模型model与测试集testset
+    Output: 当前在已见类别上的准确率
+    '''
