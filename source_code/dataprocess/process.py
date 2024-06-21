@@ -11,7 +11,6 @@
 import os
 import torchvision
 from torchvision import transforms
-import torch
 from torch.utils.data import Subset
 
 
@@ -113,7 +112,7 @@ class generalDataSet:
     # 这里默认数据集里有100个类别
     def getIncData4Train(self, inc_nums = None, base=False):
         
-        assert (inc_nums is None and not base) or (inc_nums is not None and base), "错误使用getIncData"
+        assert (inc_nums is None and base) or (inc_nums is not None and not base), "错误使用getIncData"
         if inc_nums is not None and self.taken_class_nums != 50:
             raise Exception("逻辑错误: 在增量式地攫取数据集时, 首次攫取的类数不为50")
         merged_idx = []
@@ -138,6 +137,17 @@ class generalDataSet:
 
         specific_idx = self.class_idx[self.class_order[class_order]]
         return Subset(self.dataset, specific_idx)
+    def getIncData4Test(self,inc_num = 50):
+        '''
+        本接口的调用顺序在getIncData4Train之后
+        '''
+        self.taken_class_nums += inc_num
+        merged_idx = []
+        for class_order in range(self.taken_class_nums):
+            merged_idx.extend(self.class_idx[self.class_order[class_order]])
+        return Subset(self.dataset, merged_idx)
+
+
 
 
 # TODO: 根据参考实现，修改各个transform -24.5.30 √

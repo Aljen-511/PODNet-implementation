@@ -21,7 +21,7 @@ import torch
 
 global data2conv 
 data2conv = {
-    "cifar100":"resnet32",
+    "cifar100":"resnet34",
     "imagenet100":"resnet18"
 }
 
@@ -31,11 +31,15 @@ class integratedMdl():
         # 在init的时候就完成张量转移
         # 同时，依然要注意判断：数据是在cpu上还是在gpu上
         if load_checkpoint:
-            # TODO: 做好预训练模型的载入
+            # TODO: 做好预训练模型的载入 X
+            # 这里不需要有预训练模型, 最多就是需要有一个预训练的backbone
+            # 但是, 由于框架已经定好了, 所以先不修改
 
             pass
         else:
             self.curModel = PODNet(pretrainedBackbone=True, backboneType=data2conv[data_name])
+            if torch.cuda.is_available():
+                self.curModel  = self.curModel.to("cuda")
             self.oldModel = None
             self.setManager = utils.sampleSetManager() #采用某种样本集管理策略
         
@@ -47,7 +51,7 @@ class integratedMdl():
 
     
 
-    def PODloss(self, stages, oldStages, true_class): 
+    def PODloss(self, true_classes, y_hat_c): 
         # lambda_c和lambda_f是超参数，论文里有给出推荐值
         # 池化蒸馏损失分为两个部分：空间损失和平坦损失
         # 先计算空间损失
@@ -56,11 +60,14 @@ class integratedMdl():
         # 无论是对哪个维度做池化操作，都需要算出每个像素点误差的平方
         # 对第一个任务进行训练的时候，没有L_spatial, 只有L_LSC
 
-        L_LSC = utils.NCAloss(self.eta, self.delta, )
+        # TODO: 完成NCALoss的部分
+        L_LSC = utils.NCAloss(self.eta, self.delta, true_classes, y_hat_c, self.curModel.class_lst)
 
-        if oldStages is None: #刚开始训练，还没有旧模型的情况，就只使用L_LSC
-            pass
+        if self.oldModel is None: #刚开始训练，还没有旧模型的情况，就只使用L_LSC
+            return L_LSC
         else: 
+            stages = self.curModel.stages
+            oldStages = self.oldModel.stages
             assert(len(stages) == len(oldStages)), "需要保证前后两个模型backbone的阶段数一致"
             length = len(stages)
 
@@ -82,6 +89,7 @@ class integratedMdl():
                 element-wise. The vector resulting from the pooling is then L2 normalized.
             '''
             # 没理解上面这段话
+            
             
 
             # 这里要确保h的形状是 batch_size X length_
@@ -106,17 +114,23 @@ class PODNet(nn.Module):
     def __init__(self, pretrainedBackbone = True, backboneType = 'resnet50'):
         super(PODNet, self).__init__()
         self.backbone = ResNet.construct_backbone(pretrainedBackbone, backboneType)
+        if torch.cuda.is_available():
+            self.backbone = self.backbone.to("cuda")
+        self.fc = nn.Linear(512,128)
         self.proxyNums  = 10 
 
         self.stages = None #每种resnet的stage数量一致吗？
         self.output = None #存储每一次的输出
         
         self.proxys = None #存储每个类别的代理向量
+        self.class_lst = None
 
     def forward(self, input):
         # 这里只输出h，分类交给LSC
         self.stages, self.output = self.backbone(input)
-        return self.output
+        batch_size = self.output.shape[0]
+        self.output = self.fc(self.output.squeeze())
+        return self.output.view(batch_size,-1,1,1)
     
     def LSC_Classifier(self, output_h, predict_only = True):
         # 这里对输出的h与每个类别的K个proxy计算相似度，并将得分最高的类别作为预测类别
@@ -128,39 +142,60 @@ class PODNet(nn.Module):
         # 这里的公式到底是什么意思？
         max_y_c = None
         predict_class = None
+        class_lst = []
         y_c_lst = []
+        # proxys = tensor(K, features)
+        # output_h = tensor(batch_size, features)
+        # 先把output_h squeeze一下，压缩掉原本的"1"维度，之后再在最后造出来一个"1"维度，强制使其形状一致
+        output_h = torch.squeeze(output_h)
+        output_h = output_h.unsqueeze(-1)   
+        # output_h = tensor(batch_size, features, 1)
+           
         for class_, proxys in self.proxys.items():
-            # proxys = tensor(K, features)
-            # output_h = tensor(batch_size, features)
-            # 先把output_h squeeze一下，压缩掉原本的"1"维度，之后再在最后造出来一个"1"维度，强制使其形状一致
-            output_h = torch.squeeze(output_h)
-            output_h = output_h.unsqueeze(-1)
 
-            scaler = None
-            y_c = None
+            # 这里直接赋值得了, 否则会产生原地操作(或者更好的方法应该是用no_grad()包裹适当的部分)
+            scaler = torch.zeros((output_h.shape[0],1,1),dtype=torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+            y_c = torch.zeros((output_h.shape[0],1,1),dtype=torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
+
             for i in range(self.proxyNums):
-                tmp = torch.exp(utils.cosineSim(output_h, proxys[i]))
-                if scaler is None:
-                    scaler = tmp
-                    y_c = tmp * utils.cosineSim(output_h, proxys[i])
-                else:
-                    scaler += tmp
-                    y_c += tmp * utils.cosineSim(output_h, proxys[i])
-
+                item = utils.cosineSim(output_h, proxys[i])
+                # 这里的输出应该是(batch, 1, 1)
+                scaler += torch.exp(item)
+                y_c += torch.exp(item)*item
+            # 把每个类别按顺序记录下来
+            class_lst.append(class_)
             # 这里y_c相当于对类别与所有代理相似度的一个加权平均
             y_c /= scaler
             #比较所有y_c，选择最大的作为预测类别
-            if max_y_c is None or y_c > max_y_c:
+            # TODO: 注意这里的y_c是批量的数据，因此不能如此粗暴地得到最大的y_c以及对于分类 √
+            # 这里要首先确保y_c 的形状是(batchsize, 1) --> 没有必要
+            # torch.squeeze(y_c)
+            if max_y_c is None:
                 max_y_c = y_c
-                predict_class = class_
-            y_c_lst.append(y_c)
-        assert(max_y_c is not None), "Unexpected Error: LSC无法进行分类，可能是由传导数据错误引发的"
+                predict_class = torch.full(y_c.shape, class_)
+            else:
+                predict_class[y_c>max_y_c] = class_
+                max_y_c[y_c>max_y_c] = y_c[y_c>max_y_c]
+
+
+            # 这里的y_c_lst 包含了所有的y_hat_c, 可以理解为对每个类别c的预测概率
+            # 确保y_c被压缩为b, 之后就可以用torch.stack(y_c_lst,axis = -1)将其形状变为(batch,class)
+            y_c_lst.append(y_c.squeeze())
+        
+        # 注意: 这里y_c_lst的形状硬要说的话应该是(class, batch), 后续在计算的时候应该把形状变换为(batch, class)
+        # predict_class的形状应该是(batch, 1)
+        predict_class = predict_class.view(-1,1)
+        assert(max_y_c is not None), "Unexpected Error: LSC无法进行分类, 可能是由传导数据错误引发的"
         if predict_only:
             return max_y_c, predict_class
         else:
-            return predict_class, y_c_lst
+            # return predict_class, y_c_lst
+            self.class_lst = class_lst
+            return y_c_lst
         
-        # TODO: 区分NME策略和CNN策略 -24.5.31
+        # TODO: 区分NME策略和CNN策略 -24.5.31 X
+        # 不需要区分了
+
 
     def append_proxys(self, new_proxys):
         # 这里要确保两个字典里的张量在同一设备上(尽可能在gpu上)

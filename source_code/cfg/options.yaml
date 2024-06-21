@@ -1,0 +1,9 @@
+batch_size: 128
+inc_step: 10
+dataset: cifar100
+SGD_learning_rate: 0.1
+decay_rate: 5e-4
+SGD_momentum: 0.9
+train_ratio: 0.4
+T_max: 80
+max_epoch: 160
