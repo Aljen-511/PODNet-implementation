@@ -111,7 +111,7 @@ class integratedMdl():
 
 
 class PODNet(nn.Module):
-    def __init__(self, pretrainedBackbone = True, backboneType = 'resnet50'):
+    def __init__(self, pretrainedBackbone = False, backboneType = 'resnet50'):
         super(PODNet, self).__init__()
         self.backbone = ResNet.construct_backbone(pretrainedBackbone, backboneType)
         if torch.cuda.is_available():
@@ -130,6 +130,7 @@ class PODNet(nn.Module):
         self.stages, self.output = self.backbone(input)
         batch_size = self.output.shape[0]
         self.output = self.fc(self.output.squeeze())
+        self.output = torch.relu(self.output) #试试在最后加一个relu层
         return self.output.view(batch_size,-1,1,1)
     
     def LSC_Classifier(self, output_h, predict_only = True):

@@ -33,14 +33,21 @@ def NCAloss(eta, delta, true_classes, y_hats, class_lst):
     all_class = torch.stack([torch.tensor(class_lst)]*true_classes.shape[0],dim=0).squeeze()
     all_class = all_class.to("cuda" if torch.cuda.is_available() else "cpu")
     # 这里all_class形状为(batch, class)
-    true_idx = all_class == true_classes
+    true_idx = (all_class == true_classes)
     y_hat_y = y_hats[true_idx].view(-1,1)
     # 将真实类别的值剔除掉, 方便后续的求和操作
-    y_hats[true_idx] = 0.0
-    y_hats = eta*torch.exp(y_hats)
+    y_hat_pos = torch.zeros_like(y_hats).to("cuda" if torch.cuda.is_available() else "cpu")
+    y_hat_pos[true_idx] = y_hats[true_idx]
+    y_hats = y_hats - y_hat_pos
+    # 避免原地操作直接修改, 否则梯度的传导可能不正确
+    # y_hats[true_idx] = 0.0
+    y_hats = torch.exp(eta*y_hats)
 
     L_LSC = -(eta*(y_hat_y-delta) - torch.log(torch.sum(y_hats, dim = 1)).view(-1,1))
     L_LSC = torch.clamp(L_LSC, min=0.)
+
+    # 最后一搏: 可能需要在基础训练的时候换成交叉熵损失
+
     return torch.mean(L_LSC)
 
 

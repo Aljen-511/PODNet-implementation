@@ -37,6 +37,10 @@ def train_and_evaluate(**kargs):
     ######################################
     # torch.autograd.set_detect_anomaly(True)
     ######################################
+    # 设置随机数种子, 方便排查错误
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(42)
     data_name = kargs["data_name"] if "data_name" in kargs else "cifar100"
 
     
@@ -254,8 +258,8 @@ def basic_loop(model:integratedMdl,
     basic_val_set = baseValset.getIncData4Train(base=True) if inc_classesLst is None else \
                     baseValset.getIncData4Train(inc_nums=len(inc_classesLst))
     
-    train_dataloader = DataLoader(basic_task_set,shuffle=True, batch_size=batch_size_,num_workers=num_workers_)
-    val_dataloader = DataLoader(basic_val_set, shuffle=False, batch_size=batch_size_, num_workers=num_workers_)
+    train_dataloader = DataLoader(basic_task_set,shuffle=True, batch_size=batch_size_,num_workers=num_workers_,drop_last=True)
+    val_dataloader = DataLoader(basic_val_set, shuffle=False, batch_size=batch_size_, num_workers=num_workers_,drop_last=True)
     # 创建优化器，并绑定余弦退火学习策略
     optimizer = torch.optim.SGD(lr=lr_, weight_decay=float(weight_dec), momentum=momentum_, params=model.curModel.parameters())
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=T_max_)
@@ -272,7 +276,7 @@ def basic_loop(model:integratedMdl,
             y_output = model.curModel(image)
             # 若是增量学习任务，则还需要在旧模型上推理一遍，以计算损失函数
 
-            # TODO: 这里的损失计算函数还有一点问题y
+            # TODO: 这里的损失计算函数可能还有一点问题y
             if model.oldModel is not None:
                 with torch.no_grad():
                     model.oldModel(image)
