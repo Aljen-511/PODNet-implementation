@@ -4,3 +4,5 @@ support/
 dataset/cifar-100-python/
 dataset/cifar-100-python.tar.gz
 .vscode/
+base.pth
+proxys.pt

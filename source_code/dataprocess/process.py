@@ -113,8 +113,8 @@ class generalDataSet:
     def getIncData4Train(self, inc_nums = None, base=False):
         
         assert (inc_nums is None and base) or (inc_nums is not None and not base), "错误使用getIncData"
-        if inc_nums is not None and self.taken_class_nums != 50:
-            raise Exception("逻辑错误: 在增量式地攫取数据集时, 首次攫取的类数不为50")
+        # if inc_nums is not None and self.taken_class_nums != 50:
+        #     raise Exception("逻辑错误: 在增量式地攫取数据集时, 首次攫取的类数不为50")
         merged_idx = []
         # 返回前50个类别，供初次学习
         if base:

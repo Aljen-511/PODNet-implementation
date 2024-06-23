@@ -67,10 +67,11 @@ if __name__ == "__main__":
             train_ratio = config["train_ratio"],
             batch_size = config["batch_size"],
             max_epoch = config["max_epoch"],
-            decay_rate = config["decay_rate"],
+            decay_rate = float(config["decay_rate"]),
             SGD_momentum = config["SGD_momentum"],
             T_max = config["T_max"],
-            SGD_learning_rate = config["SGD_learning_rate"]
+            SGD_learning_rate = config["SGD_learning_rate"],
+            load_base_pretrained = config["load_base_pretrained"]
 
         )        
     except FileNotFoundError:

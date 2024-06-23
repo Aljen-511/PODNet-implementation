@@ -7,7 +7,7 @@ from model.PODNet import integratedMdl
 from torch.utils.data import DataLoader
 import torch
 import numpy as np
-import tqdm
+from tqdm import tqdm
 
 def testfunc():
     print("just test a mode")

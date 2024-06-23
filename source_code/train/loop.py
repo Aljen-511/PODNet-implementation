@@ -9,6 +9,7 @@ import sys
 import os
 cur_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(cur_dir, ".."))
+check_dir = os.path.join(cur_dir, "..","..","checkpoint")
 from dataprocess import process
 from model.PODNet import integratedMdl
 from test.test import acc_loop
@@ -34,7 +35,7 @@ def train_and_evaluate(**kargs):
     # 首先进行参数解析
     # 这些交给主函数调用的时候处理即可
     ######################################
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
     ######################################
     data_name = kargs["data_name"] if "data_name" in kargs else "cifar100"
 
@@ -44,7 +45,7 @@ def train_and_evaluate(**kargs):
     base_trainset = process.generalDataSet(data_name, "train") if "train_ratio" not in kargs else \
                    process.generalDataSet(data_name, "train", train_ratio = kargs["train_ratio"])
     ##########################
-    kargs["train_ratio"] = 0.9
+    # kargs["train_ratio"] = 0.9
     ##########################
     base_valset = process.generalDataSet(data_name, "val") if "train_ratio" not in kargs else \
                   process.generalDataSet(data_name, "val",train_ratio = kargs["train_ratio"])
@@ -60,20 +61,35 @@ def train_and_evaluate(**kargs):
     # 开始基础任务的训练
     learned_classes = 0 #已经学过的类别数目
     # 进入首次训练前，先进行proxy的初始化，调用pretrain
-    
-    print("Start the basic training(50 classes)...")
-    pre_train(model,[i for i in range(50)],base_trainset)
-    basic_loop(model=model,
-               lr_=kargs["SGD_learning_rate"],
-               weight_dec=kargs["decay_rate"],
-               momentum_=kargs["SGD_momentum"],
-               baseTrainset=base_trainset,
-               baseValset=base_valset,
-               T_max_ = kargs["T_max"],
-               max_epoch=kargs["max_epoch"],
-               batch_size_=kargs["batch_size"])
+
+    # 若已指明加载预训练的base模型, 则需要寻找对应目录下的预训练模型, 并进行加载
+    # 这里的预训练base模型不包含保留的图片, 所以加载后还需要再运行一遍after_train
+    get_pretrained = False
+    if kargs["load_base_pretrained"]:
+        try:
+            # 这里要确保所有模型都尽可能在GPU上
+            check_path = os.path.join(check_dir,"base.pth")
+            proxys_path = os.path.join(check_dir, "proxys.pt")
+            model.curModel.load_state_dict(torch.load(check_path))
+            model.curModel.append_proxys(torch.load(proxys_path))
+            print("Loaded base model from pretrained.")
+            get_pretrained = True
+        except FileNotFoundError:
+            pass
+    if not get_pretrained:
+        print("Start the basic training(50 classes)...")
+        pre_train(model,[i for i in range(50)],base_trainset)
+        basic_loop(model=model,
+                lr_=kargs["SGD_learning_rate"],
+                weight_dec=kargs["decay_rate"],
+                momentum_=kargs["SGD_momentum"],
+                baseTrainset=base_trainset,
+                baseValset=base_valset,
+                T_max_ = kargs["T_max"],
+                max_epoch=kargs["max_epoch"],
+                batch_size_=kargs["batch_size"])
     after_train(model, base_trainset,[i for i in range(50)] )
-    accuracy_metric.append(acc_loop(model,base_testset,50))
+    accuracy_metric.append(acc_loop(model=model,baseTestset=base_testset,inc_step=50))
     learned_classes += 50
     print(f"Basic traing is done. Average accuracy on testset is : {accuracy_metric[-1]:.6f}")
     
@@ -86,7 +102,8 @@ def train_and_evaluate(**kargs):
         # 开始每个增量阶段的训练
         print(f"task {task}")
         pre_train(model, [i for i in range(learned_classes, learned_classes+inc_step)], base_trainset)
-        basic_loop(lr_=kargs["SGD_learning_rate"],
+        basic_loop(model=model,
+                   lr_=kargs["SGD_learning_rate"],
                    weight_dec=kargs["decay_rate"],
                    momentum_=kargs["SGD_momentum"],
                    baseTrainset=base_trainset,
@@ -179,12 +196,13 @@ def after_train(model: integratedMdl,
     # TODO: 调用样本集管理策略，保留某些旧样本 √
     # 所以这里需要在已经训练完的模型上进行推理，得到特征，之后再调用
     # model里的samplemanager，运用herding策略保留样本
+    # 这里的过程很慢, 是算法的问题
     for new_class in new_classLst:
         subset = baseTrainset.getSpecificData(new_class)
         dataloader = DataLoader(subset, batch_size=batch_size_, num_workers=num_workers_, shuffle=False)
         with torch.no_grad():
             features = []
-            for image, _ in dataloader:
+            for image, _ in tqdm(dataloader, desc=f"establish sample set on class: {new_class+1}/{new_classLst[-1]+1}",unit="itr",leave = False):
                 image = image.to("cuda" if torch.cuda.is_available() else "cpu")
                 output = model.curModel(image)
                 # 这里转移回cpu是为了后续操作的统一
@@ -264,8 +282,8 @@ def basic_loop(model:integratedMdl,
             loss.backward()
             # 这里在每一个iteration都更新一次学习率
             optimizer.step()
-            scheduler.step()
-
+            
+        scheduler.step()
         # 完成一个epoch的训练之后，应该在val集上检验性能，以便执行早停
         # TODO: 早停 6.1 √
         true_predict = 0
@@ -287,12 +305,20 @@ def basic_loop(model:integratedMdl,
 
         # 补完得差不多了，继续努力🥳
         # 粗糙的早停
-        if true_predict/totol_predict < best_acc and epoch > 30:
+        if true_predict/totol_predict < best_acc and epoch > 80:
             print(f"Stop early at Epoch{epoch+1}! Final accuracy: {true_predict/totol_predict:.6f}")
             break
         else:
-            best_acc = true_predict/totol_predict if true_predict/totol_predict > best_acc else best_acc
-            print(f"acc at epoch {epoch+1}: {best_acc:.6f}")
+            # 若基础模型有改进, 则进行保存
+            if best_acc < true_predict/totol_predict:
+                best_acc =  true_predict/totol_predict
+                if inc_classesLst is None:
+                    check_path = os.path.join(check_dir, "base.pth")
+                    proxys_path = os.path.join(check_dir, "proxys.pt")
+                    torch.save(model.curModel.state_dict(), check_path)
+                    torch.save(model.curModel.proxys, proxys_path)
+
+            print(f"best acc at epoch {epoch+1}: {best_acc:.6f}, cur acc: {true_predict/totol_predict:.6f}")
 
     # 做深拷贝, 将当前已训练完的模型进行复制
     model.oldModel = copy.deepcopy(model.curModel)
