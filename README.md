@@ -13,4 +13,8 @@ A project to implement a simple PODNet model via source paper `PODNet:Pooled Out
 
 **Here is the branch `Dev`**
 
+<hr></hr>
+- 2024.6.23 debug on the basic version. The project has NOT been completed yet.
+- 2024.6.26 Temporarily suspend the project due to the lack of time.
+
 
